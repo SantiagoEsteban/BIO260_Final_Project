@@ -1,0 +1,910 @@
+---
+title: "Effects of climatic factors on Ebola virus incidence peaks in West Africa"
+author: "Diakite, Ibrahim; Esteban, Santiago"
+date: "May 4th, 2016"
+output: html_document
+---
+
+```{r, echo=FALSE, warning=FALSE,include=FALSE, message=FALSE}
+library(dlnm)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(geepack)
+library(splines)
+library(gee)
+library(ggmap)
+library(stringr)
+library(lubridate)
+library(readxl)
+library(ggmap)
+library(RNetCDF)
+library(xlsx)
+library(sp)
+library(gganimate)
+library(ggrepel)
+library(gridExtra)
+library(RColorBrewer)
+library(knitr)
+library(splines)
+library(rms)
+library(corrplot)
+```
+
+#Introduction
+
+Between 1976 and 2012 Ebola virus Disease (EVD) outbreaks have been occurring sporadically in Central Africa, mostly concentrated in remote areas, and few hundred cases in total. In late 2013, EVD was reported in West Africa for the first time with cases rapidly spreading within major cities in Guinea, Liberia, and Sierra Leone. By late November 2014, the three countries had combined a total of 15901 cases (confirmed, probable and suspected) and 5674 deaths [1]. The World Health Organization (WHO) and its partners had declared the west African EVD outbreak an international emergency, and by mid September 2014 the first ever UN emergency health mission (UNMEER) [2] was deployed to help overcome the outbreak in affected regions, and to prevent further spreading of the disease in other regions. Although it is certainly clear that the UNMEER initiative combined with efforts from local authorities of affected countries had help prevent thousands of cases, the association between environmental factors and the onset of EVD epidemics peak has yet to be evaluated. 
+
+In a 2004 study, Pinzon et al [3] used spatially continuous satellite data as a correlate for precipitation within tropical Africa to show that most of EVD outbreak that occurred between 1976 and 2004 was associated with drier conditions at the end of the rainy season. A more recent study by S Ng et al [4] found a similar correlation between climate conditions and the onset of first case EVD in all affected regions between 1976 and 2014. These findings could be partly explained by trigger events that may enhance the transmission of EVD from its natural hosts to humans. For example, studies have shown highest rates of seropositivity among adults and pregnant females bats [5], and mating among bats has also been associated with rainy or wet seasons [6],which may explain how climatic factors are associated with onset of EVD outbreaks. However, several experimental studies have also found associations between human exposure to different physiologically relevant temperatures and changes in immune response [7-9]. These findings can lead one to postulate that exposure to environmental factors may have triggered immune responses in human hosts such that infection with EVD may have resulted in mild or asymptomatic infections.
+
+A number of studies have investigated the association between climatic factors and incidence of disease. Limper et al [10] found an association between temperature, humidity, and rainfall and the incidence of Dengue in Curacao. A non-linear association between exposure to ambient temperature and Children’s hand, foot and mouth disease (HFMD) was found by Meimei et al [11], where they found that rising temperatures increased the incidence of children’s HFMD, with disease peak at 25.0C ~ 27.5C.  
+
+First, we aim to investigate if there is evidence of any association between climatic factors such as temeperature, rainfall, vapor pressur and the incidence of EVD in the 2014 Ebola outbreak in West Africa. Second, we also aim to look for any association between climat facors and the onset of the peak of EVD in the districts of Guinea, Liberia, and Sierra Leone. We therefore obtained case count data of EVD, and climatic factors data in the districts of Guinea, Liberaia and Sierra Leone from 2013 to 2016, and we used a distributed lag non linear model (DLNM), as observed in Gasparrini et al [12], to assess if there was an association between the climatic factors and EVD incidences; and climatic factors and the onset of EVD peaks. We chose the DLNM because it allows for both linear and non-linear exposure-response relationships, and allows for us to check if the effect is delayed in time or not.
+
+#Data collection
+
+Our analysis required both, case count data for the 2014 Ebola outbreak in West Africa and also climate data for the same period (2013-2015) and region.
+
+##Case count data
+Weekly case counts since the beginning of the outbreak (December 2013) up until November 2015 were obtained from the WHO website on the 2014 Ebola virus outbreak (http://apps.who.int/gho/data/node.ebola-sitrep). Data for Guinea was available per prefecture (34 prefectures; no data for Mandiana). For Sierra Leone and Liberia case counts per district (Sierra Leone, 14 districts) and per county (Liberia, 15 counties) were retrieved. Only cases in the patient database were considered, both confirmed and probable. Probable cases are defined as patients suspected of having Ebola by a physician or deceased patients who died from "suspected" Ebola and had an epidemilogical link to a confirmed Ebola case; A case is classified as "confirmed" if they have a positive PCR-Ebola test.
+
+##Climate data
+Information on several climate factors was retrieved from the Climate Research Unit at the University of East Anglia (http://www.cru.uea.ac.uk/). Data for each climate factor was detailed in a grid with a definition of 0.5*0.5 degrees with monthly information. Climate factors include Vapor Pressure (hPa); Mean, Minimum and Maximum Temperature (degrees Celsius); Potential Evapotranspiration (mm per month); Precipitation (mm per month); Wet Day frequency (days per month) and Diurnal Temperature range (degrees Celsius). Data was available up until 2014.
+The climate data grid was matched with each of the three countries sub-regions, averaging over the values for the total number of 0.5*0.5 degree squares that fitted into each region.
+For the year 2015, no climate data was available, thus it was imputed as the mean of the four previous years. Also, since only monthly information was availble, weekly mean values were interpolated from the monthly data by means of a natural cubic spline function.
+
+Finally information from both sources was combined in long format (See: Three_Countries_cases_climate.Rmd). Also population data per district was scraped from 'http://www.citypopulation.de/' and added to the dataset (See: population_data.R)
+
+#Exploratory data analysis
+
+##Analysis of country level data 
+
+###Incidence per country
+Initially we explored the weekly and cumulative incidence by country. We can see that the outbreak had different patterns in the three countries: Guinea was where the outbreak started and where the last cases were recorded. Nevertheless, the incidence was significantly lower compared to Sierra Leone or Liberia and its peak occurred later. On the other hand, Liberia had an early peak and an abrupt early decline in incidence. Sierra Leone was the country that had the highest cumulative incidence and the highest peak, although it peaked later, almost at the same time as Guinea. 
+
+```{r, echo=FALSE}
+#Loading datasets created in previous step and adding information on the peaks of onset
+
+#Guinea
+load('guinea_weekly_cases_climate.Rdata')
+guinea_weekly_cases_climate$Weeks <- ymd(guinea_weekly_cases_climate$Weeks)
+guinea_weekly_cases_climate <- group_by(guinea_weekly_cases_climate, Location) %>% mutate(Peak=ifelse(Total_cases>0 & Total_cases==max(Total_cases),1,0), Cum_peak=cumsum(Peak)) %>% ungroup
+guinea_weekly_cases_climate <- select(guinea_weekly_cases_climate, -Week, -Epi_Week)
+guinea_weekly_cases_climate$Cum_peak <- ifelse(guinea_weekly_cases_climate$Cum_peak>=1,1,0)
+guinea_weekly_cases_climate$Population <- as.numeric(as.character(guinea_weekly_cases_climate$Population))
+
+#Sierra Leone
+load('SL_weekly_cases_climate.Rdata')
+SL_weekly_cases_climate$Weeks <- ymd(SL_weekly_cases_climate$Weeks)
+SL_weekly_cases_climate <- group_by(SL_weekly_cases_climate, Location) %>% mutate(Peak=ifelse(Total_cases>0 & Total_cases==max(Total_cases),1,0), Cum_peak=cumsum(Peak)) %>% ungroup
+SL_weekly_cases_climate <- select(SL_weekly_cases_climate, -Week, -Epi_Week)
+SL_weekly_cases_climate$Cum_peak <- ifelse(SL_weekly_cases_climate$Cum_peak>=1,1,0)
+SL_weekly_cases_climate$Population <- as.numeric(as.character(SL_weekly_cases_climate$Population))
+
+#Liberia
+load('Liberia_weekly_cases_climate.Rdata')
+Liberia_weekly_cases_climate$Weeks <- ymd(Liberia_weekly_cases_climate$Weeks)
+Liberia_weekly_cases_climate <- group_by(Liberia_weekly_cases_climate, Location) %>% mutate(Peak=ifelse(Total_cases>0 & Total_cases==max(Total_cases),1,0), Cum_peak=cumsum(Peak)) %>% ungroup
+Liberia_weekly_cases_climate <- select(Liberia_weekly_cases_climate, -Week, -Epi_Week)
+Liberia_weekly_cases_climate$Cum_peak <- ifelse(Liberia_weekly_cases_climate$Cum_peak>=1,1,0)
+Liberia_weekly_cases_climate$Population <- as.numeric(as.character(Liberia_weekly_cases_climate$Population))
+
+#Three Countries
+all_countries <- rbind(guinea_weekly_cases_climate, SL_weekly_cases_climate, Liberia_weekly_cases_climate)
+
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=8, fig.align='center'}
+#Aggregating weekly incidence per country
+guinea_marginal_incidence <- group_by(guinea_weekly_cases_climate, Weeks) %>% summarise(Total_cases=sum(Total_cases), country='Guinea')
+Liberia_marginal_incidence <- group_by(Liberia_weekly_cases_climate, Weeks) %>% summarise(Total_cases=sum(Total_cases), country='Liberia')
+SL_marginal_incidence <- group_by(SL_weekly_cases_climate, Weeks) %>% summarise(Total_cases=sum(Total_cases), country='Sierra Leone')
+three_countries_marginal_incidence <- rbind(guinea_marginal_incidence, Liberia_marginal_incidence, SL_marginal_incidence)
+
+ggplot() + 
+    geom_area(data=filter(guinea_marginal_incidence, Weeks>'2013-12-01'), aes(x=Weeks, y=Total_cases, fill='Guinea'),color='black', alpha=0.5, size=0.5) + 
+    geom_area(data=filter(Liberia_marginal_incidence, Weeks>'2013-12-01'), aes(x=Weeks, y=Total_cases, fill='Liberia'),color='black', alpha=0.5, size=0.5) + 
+    geom_area(data=filter(SL_marginal_incidence, Weeks>'2013-12-01'), aes(x=Weeks, y=Total_cases, fill='Sierra Leone'), color='black', alpha=0.5, size=0.5) +
+    scale_fill_discrete(name='Country') +
+    guides(color="none") + ylab('Number of Cases') + ggtitle('Incidence of weekly cases vs Time') +
+    theme_classic()
+
+#Cumulative incidence per country
+guinea_marginal_cumulative <- group_by(guinea_weekly_cases_climate, Weeks) %>% summarise(Total_cum=sum(Cum_cases), country='Guinea')
+Liberia_marginal_cumulative <- group_by(Liberia_weekly_cases_climate, Weeks) %>% summarise(Total_cum=sum(Cum_cases), country='Liberia')
+SL_marginal_cumulative <- group_by(SL_weekly_cases_climate, Weeks) %>% summarise(Total_cum=sum(Cum_cases), country='Sierra Leone')
+three_countries_marginal_cumulative <- rbind(guinea_marginal_cumulative, Liberia_marginal_cumulative, SL_marginal_cumulative)
+three_countries_marginal_cumulative$population[three_countries_marginal_cumulative$country=='Guinea'] <- 11628972
+three_countries_marginal_cumulative$population[three_countries_marginal_cumulative$country=='Sierra Leone'] <- 6247243
+three_countries_marginal_cumulative$population[three_countries_marginal_cumulative$country=='Liberia'] <- 4345123
+
+kable(group_by(three_countries_marginal_cumulative, country) %>% summarise('Cumulative incidence'=max(Total_cum), Proportion=max(Total_cum)/max(population)))
+```
+
+###Incidence and climatic factors per country
+
+Following our main aim, we proceed to explore the raltionship between the incidence and the averaged climatic factors, per country. We can see that temperature has a downward trajectory in the weeks preceding the onset of the outbreak in all three countries. It also coincides with the start of the rainy season. 
+
+```{r, echo=FALSE, fig.width=16, fig.height=16, fig.align='center'}
+#Min-Mean-Max temp
+guinea_marginal_temp <- group_by(guinea_weekly_cases_climate, Weeks) %>% summarise(tmn=mean(tmn), tmp=mean(tmp), tmx=mean(tmx), country='Guinea')
+Liberia_marginal_temp <- group_by(Liberia_weekly_cases_climate, Weeks) %>% summarise(tmn=mean(tmn), tmp=mean(tmp), tmx=mean(tmx), country='Liberia')
+SL_marginal_temp <- group_by(SL_weekly_cases_climate, Weeks) %>% summarise(tmn=mean(tmn), tmp=mean(tmp), tmx=mean(tmx), country='Sierra Leone')
+three_countries_marginal_climate <- rbind(guinea_marginal_temp, Liberia_marginal_temp, SL_marginal_temp)
+
+#Vapor pressure
+guinea_marginal_vap <- group_by(guinea_weekly_cases_climate, Weeks) %>% summarise(vap=mean(vap), country='Guinea')
+Liberia_marginal_vap <- group_by(Liberia_weekly_cases_climate, Weeks) %>% summarise(vap=mean(vap), country='Liberia')
+SL_marginal_vap <- group_by(SL_weekly_cases_climate, Weeks) %>% summarise(vap=mean(vap), country='Sierra Leone')
+three_countries_marginal_climate <- left_join(three_countries_marginal_climate, rbind(guinea_marginal_vap, Liberia_marginal_vap, SL_marginal_vap), by=c('Weeks','country'))
+
+#Precipitation
+guinea_marginal_pre <- group_by(guinea_weekly_cases_climate, Weeks) %>% summarise(pre=mean(pre), country='Guinea')
+Liberia_marginal_pre <- group_by(Liberia_weekly_cases_climate, Weeks) %>% summarise(pre=mean(pre), country='Liberia')
+SL_marginal_pre <- group_by(SL_weekly_cases_climate, Weeks) %>% summarise(pre=mean(pre), country='Sierra Leone')
+three_countries_marginal_climate <- left_join(three_countries_marginal_climate, rbind(guinea_marginal_pre, Liberia_marginal_pre, SL_marginal_pre), by=c('Weeks','country'))
+
+#Creating graphs per measurement
+three_countries_tmp <- ggplot(data=filter(three_countries_marginal_climate, Weeks>='2013-12-29'), aes(Weeks, tmp)) +
+    geom_ribbon(aes(ymin=tmn, ymax=tmx), color='gray', alpha=0.2) + 
+    geom_line(aes(y=tmp), color='red', size=0.8) + geom_line(aes(y=tmx), color='orange', size=0.2) +
+    geom_line(aes(y=tmn), color='orange', size=0.2) + xlab('') + ylab('Min-Mean-Max\nTemp') + facet_grid(~country) 
+
+three_countries_pre <- ggplot(data=filter(three_countries_marginal_climate, Weeks>='2013-12-29'), aes(Weeks)) + geom_area(aes(y=pre), color='light blue', size=1, fill='light blue', alpha=0.6) +
+    geom_line(aes(y=pre), color='light blue')  + xlab('') + ylab('Precipitation\nin mm') + facet_grid(~country)+ theme(strip.background = element_blank(),   strip.text.x = element_blank())
+
+three_countries_vap <- ggplot(data=filter(three_countries_marginal_climate, Weeks>='2013-12-29'), aes(Weeks)) + geom_area(aes(y=vap), size=1, fill='yellow', alpha=0.6) +
+    geom_line(aes(y=vap), color='yellow') + xlab('') + ylab('Vapor pressure\nin hPa') + facet_grid(~country)+ theme(strip.background = element_blank(),   strip.text.x = element_blank())
+
+three_countries_incidence <- ggplot(data=filter(three_countries_marginal_incidence, Weeks>='2013-12-29'), aes(Weeks)) + geom_area(aes(y=Total_cases), size=1, fill='light green', alpha=0.6) +
+    geom_line(aes(y=Total_cases), color='light green') + xlab('') + ylab('Case count') + facet_grid(~country)+ theme(strip.background = element_blank(),   strip.text.x = element_blank())
+
+three_countries_cumulative <- ggplot(data=filter(three_countries_marginal_cumulative, Weeks>='2013-12-29'), aes(Weeks)) + geom_area(aes(y=Total_cum), size=1, fill='orange', alpha=0.6) +
+    geom_line(aes(y=Total_cum), color='orange') + xlab('') + ylab('Cumualtive case count') + facet_grid(~country)+ theme(strip.background = element_blank(),   strip.text.x = element_blank())
+
+grid.arrange(three_countries_tmp, three_countries_pre, three_countries_vap, three_countries_incidence, three_countries_cumulative, nrow=5)
+```
+
+
+##Analysis of district level data
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#Creating dataframe with maps, climate and case count data.
+
+#########
+#Map data
+#########
+
+#Guinea
+guineards <- readRDS("GIN_adm2.rds")
+guineashp.df <- fortify(guineards)
+guinea_map <- as.data.frame(cbind(NAME_2=guineards@data$NAME_2, id=guineards@data$ID_2))
+guinea_map$NAME_2 <- toupper(guinea_map$NAME_2)
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "BOKÉ", "BOKE")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "DINGUIRAYE", "DINGUIRAY")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "KÉROUANÉ", "KEROUANE")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "DUBRÉKA", "DUBREKA")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "FORÉCARIAH", "FORECARIAH")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "TÉLIMÉLÉ", "TELIMELE")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "LÉLOUMA", "LELOUMA")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "LABÉ", "LABE")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "TOUGUÉ", "TOUGUE")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "GUÉCKÉDOU", "GUECKEDOU")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "NZÉRÉKORÉ", "NZEREKORE")
+guinea_map$NAME_2 <- str_replace_all(guinea_map$NAME_2, "YAMOU", "YOMOU")
+guinea.centroids <- as.data.frame(coordinates(guineards)) %>% rename(x=V1, y=V2)
+guinea.centroids$id <- rownames(guinea.centroids)
+guinea_map <- left_join(guinea_map, guinea.centroids)
+guinea_map <- left_join(guineashp.df, guinea_map, by='id')
+guinea_map <- rename(guinea_map, Location=NAME_2)
+guinea_map_complete <- left_join(guinea_weekly_cases_climate, guinea_map, by='Location')
+guineards_adm0 <- readRDS("GIN_adm0.rds")
+guineashp.adm0 <- fortify(guineards_adm0)
+guinea_map_complete$Population <- as.numeric(as.character(guinea_map_complete$Population))
+
+#Sierra Leone
+SLrds <- readRDS("SLE_adm2.rds")
+SLshp.df <- fortify(SLrds)
+SL_map <- as.data.frame(cbind(NAME_2=SLrds@data$NAME_2, id=SLrds@data$ID_2))
+SL_map$NAME_2 <-str_replace(SL_map$NAME_2, "Western Urban", "WESTERNURBAN")
+SL_map$NAME_2 <-str_replace(SL_map$NAME_2, "Western Rural", "WESTERNRURAL")
+SL_map$NAME_2 <-str_replace(SL_map$NAME_2, "Port Loko", "PORTLOKO")
+SL_map$NAME_2 <- toupper(SL_map$NAME_2)
+SL.centroids <- as.data.frame(coordinates(SLrds)) %>% rename(x=V1, y=V2)
+SL.centroids$id <- rownames(SL.centroids)
+SL_map <- left_join(SL_map, SL.centroids)
+SL_map <- left_join(SLshp.df, SL_map, by='id')
+SL_map <- rename(SL_map, Location=NAME_2)
+SL_map_complete <- left_join(SL_weekly_cases_climate, SL_map, by='Location')
+SL_adm0_rds <- readRDS("SLE_adm0.rds")
+SLshp.adm0 <- fortify(SL_adm0_rds)
+SL_map_complete$group <- as.factor(as.numeric(as.character(SL_map_complete$group))+100)
+SL_map_complete$Population <- as.numeric(as.character(SL_map_complete$Population))
+
+#Liberia
+LBrds <- readRDS("LBR_adm1.rds")
+LBshp.df <- fortify(LBrds)
+LB_map <- as.data.frame(cbind(Location=LBrds@data$NAME_1, id=LBrds@data$ID_1))
+LB_map$Location <- toupper(LB_map$Location)
+LB_map$Location <-str_replace(LB_map$Location, "GBAPOLU", "GBARPOLU")
+LB_map$Location <-str_replace(LB_map$Location, "GRANDBASSA", "GRAND_BASSA")
+LB_map$Location <-str_replace(LB_map$Location, "GRANDGEDEH", "GRAND_GEDEH")
+LB_map$Location <-str_replace(LB_map$Location, "GRANDKRU", "GRAND_KRU")
+LB_map$Location <-str_replace(LB_map$Location, "RIVER CESS", "RIVER_CESS")
+LB_map$Location <-str_replace(LB_map$Location, "GRAND CAPE MOUNT", "GRAND_CAPE_MOUNT")
+LB_map$Location <-str_replace(LB_map$Location, "RIVER GEE", "RIVER_GEE")
+LB.centroids <- as.data.frame(coordinates(LBrds)) %>% rename(x=V1, y=V2)
+LB.centroids$id <- rownames(LB.centroids)
+LB_map <- left_join(LB_map, LB.centroids)
+LB_map <- left_join(LBshp.df, LB_map, by='id')
+LB_map_complete <- left_join(Liberia_weekly_cases_climate, LB_map, by='Location')
+LB_adm0_rds <- readRDS("LBR_adm0.rds")
+LBshp.adm0 <- fortify(LB_adm0_rds)
+LB_map_complete$group <- as.factor(as.numeric(as.character(LB_map_complete$group))+200)
+LB_map_complete$Population <- as.numeric(as.character(LB_map_complete$Population))
+```
+
+###Incidence per district
+We visualize now the cumulative incidence per region and the population for the three countries at the end of 2015 to see which were the most affected districts (population data is for the year 2014). We can clearly see that the highest number of cases were concentrated near the capitals of the three countries: Conakry (Conakry, Guinea), Freetown (Western Urban, Sierra Leone) and Monrovia (Montserrado, Liberia), while other districts presented no cases.
+
+```{r, echo=FALSE, fig.width=12, fig.height=12, fig.align='center'}
+cumulative_guinea_district <- group_by(guinea_weekly_cases_climate, Location) %>%
+    summarise('Cumulative incidence'=max(Cum_cases))
+cumulative_Liberia_district <- group_by(Liberia_weekly_cases_climate, Location) %>%
+    summarise('Cumulative incidence'=max(Cum_cases))
+cumulative_SL_district <- group_by(SL_weekly_cases_climate, Location) %>%
+    summarise('Cumulative incidence'=max(Cum_cases))
+
+kable(cumulative_guinea_district, caption='Cumulative incidence by district for Guinea, 12/2013 - 11/2015')
+kable(cumulative_Liberia_district, caption='Cumulative incidence by district for Liberia, 12/2013 - 11/2015')
+kable(cumulative_SL_district, caption='Cumulative incidence by district for Sierra Leone, 12/2013 - 11/2015')
+
+#Maps showing cumulative incidence by district
+guinea152 <-filter(guinea_map_complete,count_week==152)
+SL152 <- filter(SL_map_complete,count_week==152)
+LB152 <- filter(LB_map_complete,count_week==152)
+mypalette<-brewer.pal(9,"Oranges")
+ incidence <-ggplot() +
+    geom_polygon(data=guinea152, aes(x = long, y = lat, group = group, fill = Cum_cases), color="black", size=0.25) + scale_fill_gradientn(name='Cumulative\ncases', colours = mypalette, values=c(0,0.0001, 0.001, 0.01, 0.02, 0.03, 0.04, 0.05,0.1,0.2,0.3, 0.4, 0.5, 1)) +
+geom_polygon(data=SL152, aes(x = long, y = lat, group = group, fill = Cum_cases), color="black", size=0.25) +
+    geom_polygon(data=LB152, aes(x = long, y = lat, group = group, fill = Cum_cases), color="black", size=0.25)  +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Guinea"), fill=NA, size = 0.75, data=guineashp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Sierra Leone"), fill=NA, size = 0.75, data=SLshp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Liberia"), fill=NA, size = 0.75, data=LBshp.adm0) +
+    geom_point(aes(x=-13.628, y=9.5876), color='blue', size=3) +
+    geom_point(aes(x=-13.2317, y=8.4657), color='blue', size=3) +
+    geom_point(aes(x=-10.7605, y=6.2907), color='blue', size=3) +
+    geom_text(aes(x=-14.3, y=9.6412, label='Conakry'), size=5) +
+    geom_text(aes(x=-14.0, y=8.4657, label='Freetown'), size=5) +
+    geom_text(aes(x=-11.5, y=6.2907, label='Monrovia'), size=5) +
+    coord_map() + guides(color='none') + theme_classic() +
+        ggtitle('Cumulative case count by November 2015') +
+     xlab('Longitude') + ylab('Latitude')+ theme(plot.title = element_text(size=20), axis.title=element_text(size=16), legend.position='bottom')
+ 
+ #Population density per district
+ mypalette<-brewer.pal(9,"PuRd")
+population <- ggplot() +
+    geom_polygon(data=guinea152, aes(x = long, y = lat, group = group, fill = Population/100000), color="black", size=0.25) + scale_fill_gradientn(name='Population\nin 100,000', colours = mypalette) +
+geom_polygon(data=SL152, aes(x = long, y = lat, group = group, fill = Population/100000), color="black", size=0.25) +
+    geom_polygon(data=LB152, aes(x = long, y = lat, group = group, fill = Population/100000), color="black", size=0.25)  +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Guinea"), fill=NA, size = 0.75, data=guineashp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Sierra Leone"), fill=NA, size = 0.75, data=SLshp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Liberia"), fill=NA, size = 0.75, data=LBshp.adm0) +
+    geom_point(aes(x=-13.628, y=9.5876), color='blue', size=3) +
+    geom_point(aes(x=-13.2317, y=8.4657), color='blue', size=3) +
+    geom_point(aes(x=-10.7605, y=6.2907), color='blue', size=3) +
+    geom_text(aes(x=-14.1784, y=9.6412, label='Conakry'), size=5) +
+    geom_text(aes(x=-13.8317, y=8.4657, label='Freetown'), size=5) +
+    geom_text(aes(x=-11.3605, y=6.2907, label='Monrovia'), size=5) +
+    coord_map() + guides(color='none') + theme_classic() +
+        ggtitle('Population per district, for 2014') +
+     xlab('Longitude') + ylab('Latitude')+ theme(plot.title = element_text(size=20), axis.title=element_text(size=16), legend.text=element_text(size=8), legend.position='bottom')
+ 
+grid.arrange(population, incidence, ncol=2)
+```
+
+We can see that more populated areas tend to have a higher number of cases. This is particularly the case for Sierra Leone, but this pattern is not as clear for Guinea and Liberia. There is probably a country effect that may account for other causes of the incidence (public health response, sanitation, etc.)
+
+In the animation below we can see that the outbreak began near the junction of the three borders and later expanded towards the main cities, which also suggests that population alone is not driving all of the variability in the outcome.
+
+```{r fig.show = "animate", echo=FALSE, fig.align='center', fig.width=8, fig.height=8}
+three_countries_map_complete <- rbind(
+    select(guinea_map_complete, count_week, Location, long, lat, group, Cum_cases, Total_cases, Peak, Cum_peak,Weeks, Country) %>% filter(Weeks>'2013-12-01'),
+    select(SL_map_complete, Location, count_week, long, lat, group, Cum_cases, Total_cases, Peak, Cum_peak, Weeks,Country) %>% filter(Weeks>'2013-12-01'),
+    select(LB_map_complete, Location, count_week, long, lat, group, Cum_cases, Total_cases, Peak, Cum_peak, Weeks, Country) %>% filter(Weeks>'2013-12-01')
+)
+
+weeks_incidence <- seq(53,152, by=4)
+three_countries_map_incidence <- ggplot(filter(three_countries_map_complete, count_week%in%weeks_incidence), aes(x = long, y = lat, group = group, fill = Cum_cases, frame=Weeks)) +
+    geom_polygon(color = "black", size = 0.25) + coord_map() + scale_fill_gradientn(name='Cumulative case count', colours = mypalette, values=c(0,0.0001, 0.001, 0.01, 0.02, 0.03, 0.04, 0.05,0.1,0.2,0.3, 0.4, 0.5, 1)) + ggtitle('Cumulative incidence by week\n')
+
+gg_animate(three_countries_map_incidence)
+
+```
+
+Furthermore, the two previous figures suggest that there is both a time and a spacial effect (time and region correlation of the incidence). We aim to explore this in the following sections.
+
+###Spatial effect on incidence per district
+As we saw in the previous maps, districts with higher incidence tend to cluster together. This could be indicative of a spatial effect on incidence.
+In graph below we explore the correlation of incidence between districts. Custers of districts with similar incidence patterns clearly emerge as we can see by examining the correlation. The black squares in the correlation plot denote clusters (hierarchical clusters, 10). Also, many of those regions are clustered in terms of geolocation as we can see in the district's map. 
+
+```{r, echo=FALSE, fig.align='center'}
+all.countries.wide <- all_countries %>% select(count_week, Location, Total_cases) %>% filter(count_week>52) %>% spread(count_week, Total_cases)
+row.names(all.countries.wide) <- all.countries.wide$Location
+all.countries.wide <- select(all.countries.wide, -Location)
+all.countries.wide$Cumsum <- rowSums(all.countries.wide)
+all.countries.wide$Location <- row.names(all.countries.wide)
+all.countries.wide <- filter(all.countries.wide, Cumsum > 0) %>% select(-Cumsum)
+all.countries.wide <- gather(all.countries.wide, count_week, Total_cases, 1:100) %>% arrange(Location) %>% spread(Location, Total_cases)
+all.countries.wide$count_week <- as.numeric(all.countries.wide$count_week)
+all.countries.wide <- arrange(all.countries.wide, count_week)
+
+corrplot(cor(select(all.countries.wide, -count_week)), method='shade', order="hclust", hclust.method="complete",title='Correlation of incidence between districts', addrect=10, tl.cex=0.6)
+
+ggplot() +
+    geom_polygon(data=guinea152, aes(x = long, y = lat, group = group, fill=Location), color='black', size=0.25) +
+    geom_polygon(data=SL152, aes(x = long, y = lat, group = group, fill=Location), color='black', size=0.25) +
+    geom_polygon(data=LB152, aes(x = long, y = lat, group = group, fill=Location), color='black', size=0.25) +
+    geom_text(aes(x=x, y=y,label=Location), size=2, data=guinea152) +
+    geom_text(aes(x=x, y=y,label=Location), size=2, data=SL152) +
+    geom_text(aes(x=x, y=y,label=Location), size=2, data=LB152) +
+    geom_polygon(aes(x = long, y = lat, group = group), color='dark red',fill=NA, size = 1.5, data=guineashp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group), color='dark green', fill=NA, size = 1.5, data=SLshp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group), color='dark blue', fill=NA, size = 1.5, data=LBshp.adm0) +
+    coord_map() + guides(fill='none') + theme_classic() +
+    ggtitle('Districts in Guinea, Sierra Leone and Liberia') +
+    scale_color_discrete(name='Country') +
+    xlab('Longitude') + ylab('Latitude')+ theme(plot.title = element_text(size=16), axis.title=element_text(size=12), legend.text=element_text(size=8))
+```
+
+To further analyze the  spatial effect, we model the effect of location on the outcome.
+
+```{r, echo=FALSE, fig.align='center'}
+all.countries.cases <- filter(all_countries, count_week>52) %>% select(Location, Longitude, Latitude, Total_cases, count_week)
+all.countries.cases.long <- gather(all.countries.cases, coord, value, 2:3)
+mypalette <- brewer.pal(6,'Spectral')
+ggplot(aes(x=value, y=Total_cases), data=all.countries.cases.long) + 
+            geom_point(aes(fill=Total_cases), pch=21, size=2, color='black') + xlab('Coordinates') + ylab('Weekly incidence') +
+            ggtitle('Weekly incidence vs geolocation coordinates') + scale_fill_gradientn(name='Cases', colours = mypalette) + facet_grid(~coord, scale='free') + guides(fill='none')
+```
+
+As we had seen before, longitude and latitude seem to be correlated with the outcome. We continue exploring the spatial relationship to the outcome by means of a linear model that includes an interaction of splines for longitud and latitude. Below are the residuals graphs.
+
+```{r, echo=FALSE, fig.align='center'}
+mypalette <- brewer.pal(6,'Spectral')
+lm.all.countries.cases <- lm(Total_cases~ns(Longitude, 3)*ns(Latitude, 4), data=all.countries.cases)
+
+a <- ggplot() + geom_point(aes(x=all.countries.cases$Longitude, y=lm.all.countries.cases$residuals, fill=all.countries.cases$Total_cases), color='black', pch=21, size=2)+ scale_fill_gradientn(colors=mypalette) +
+    xlab('Longitude') + ylab('Weekly cases') + ggtitle('Residuals vs Longitude') + guides(fill='none')
+
+b <- ggplot() + geom_point(aes(x=all.countries.cases$Latitude, y=lm.all.countries.cases$residuals, fill=all.countries.cases$Total_cases), color='black', pch=21, size=2)+ scale_fill_gradientn(colors=mypalette) +
+    xlab('Latitude') + ylab('Weekly cases') + ggtitle('Residuals vs Latitude') + guides(fill='none')
+
+c <- ggplot() + geom_point(aes(x=lm.all.countries.cases$fitted.values, y=lm.all.countries.cases$residuals, fill=all.countries.cases$Total_cases), color='black', pch=21, size=2)+ scale_fill_gradientn(colors=mypalette) +
+    xlab('Fitted values') + ylab('Residuals') + ggtitle('Residuals vs Fitted values') + guides(fill='none')
+
+grid.arrange(a,b, c, ncol=3)
+```
+
+This simplified model gives us an idea about the effect of the geographical location. The highest residuals are observed at the regions with the highest incidence (Conakry, Western Urban/Rural Area, Port Loko and Montserrado). Thus, we can conclude that there is a spatial effect but it does not account for all the variability in the outcome.
+
+###Time effect on incidence per district
+In order to explore this effect we fit a simple linear regression model, by region. We limit the analysis the two districts with the highest case count per country (Guinea: Conakry, Macenta; Sierra Leone: Western Urban, Port Loko; Liberia: Montserrado, Margibi).
+We fit a spline of the effect of time on the number of cases as the outcome, per region. Then we analyze the residuals.
+
+```{r, echo=FALSE,   fig.height=12, fig.width=16}
+conakry <- filter(filter(all_countries, Location=='CONAKRY', count_week>52))
+lm.conakry <- lm(Total_cases~ns(count_week, df=5), data=conakry)
+conakry.a <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=conakry$count_week, y=lm.conakry$residuals, fill=lm.conakry$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Oranges')) + xlab('Week number') + ylab('Residuals') +  guides(fill='none', color='none')
+
+conakry.b <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=lm.conakry$fitted.values, y=lm.conakry$residuals, fill=lm.conakry$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Blues')) + xlab('Fitted values') + ylab('Residuals') +  guides(fill='none', color='none')
+conakry.graph <- arrangeGrob(conakry.a, conakry.b,ncol=2, top="Conakry, Guinea")
+
+macenta <- filter(filter(all_countries, Location=='MACENTA', count_week>52))
+lm.macenta <- lm(Total_cases~ns(count_week, df=5), data=macenta)
+macenta.a <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=macenta$count_week, y=lm.macenta$residuals, fill=lm.macenta$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Oranges')) + xlab('Week number') + ylab('Residuals') +  guides(fill='none', color='none')
+
+macenta.b <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=lm.macenta$fitted.values, y=lm.macenta$residuals, fill=lm.macenta$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Blues')) + xlab('Fitted values') + ylab('Residuals') +  guides(fill='none', color='none') 
+
+macenta.graph <- arrangeGrob(macenta.a, macenta.b,ncol=2, top='Macenta, Guinea')
+
+westernurban <- filter(filter(all_countries, Location=='WESTERNURBAN', count_week>52))
+lm.westernurban <- lm(Total_cases~ns(count_week, df=5), data=westernurban)
+westernurban.a <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=westernurban$count_week, y=lm.westernurban$residuals, fill=lm.westernurban$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Oranges')) + xlab('Week number') + ylab('Residuals') +  guides(fill='none', color='none')
+
+westernurban.b <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=lm.westernurban$fitted.values, y=lm.westernurban$residuals, fill=lm.westernurban$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Blues')) + xlab('Fitted values') + ylab('Residuals') +  guides(fill='none', color='none') 
+
+westernurban.graph <- arrangeGrob(westernurban.a, westernurban.b,ncol=2, top='Western Area Urban, Sierra Leone')
+
+portloko <- filter(filter(all_countries, Location=='PORTLOKO', count_week>52))
+lm.portloko <- lm(Total_cases~ns(count_week, df=5), data=portloko)
+portloko.a <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=portloko$count_week, y=lm.portloko$residuals, fill=lm.portloko$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Oranges')) + xlab('Week number') + ylab('Residuals') +  guides(fill='none', color='none')
+
+portloko.b <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=lm.portloko$fitted.values, y=lm.portloko$residuals, fill=lm.portloko$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Blues')) + xlab('Fitted values') + ylab('Residuals') +  guides(fill='none', color='none') 
+portloko.graph <- arrangeGrob(portloko.a, portloko.b,ncol=2, top='Port Loko, Sierra Leone')
+
+montserrado <- filter(filter(all_countries, Location=='MONTSERRADO', count_week>52))
+lm.montserrado <- lm(Total_cases~ns(count_week, df=5), data=montserrado)
+montserrado.a <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=montserrado$count_week, y=lm.montserrado$residuals, fill=lm.montserrado$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Oranges')) + xlab('Week number') + ylab('Residuals') +  guides(fill='none', color='none')
+
+montserrado.b <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=lm.montserrado$fitted.values, y=lm.montserrado$residuals, fill=lm.montserrado$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Blues')) + xlab('Fitted values') + ylab('Residuals') +  guides(fill='none', color='none')
+montserrado.graph <- arrangeGrob(montserrado.a, montserrado.b,ncol=2, top='Montserrado, Liberia')
+
+margibi <- filter(filter(all_countries, Location=='MARGIBI', count_week>52))
+lm.margibi <- lm(Total_cases~ns(count_week, df=5), data=margibi)
+margibi.a <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=margibi$count_week, y=lm.margibi$residuals, fill=lm.margibi$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Oranges')) + xlab('Week number') + ylab('Residuals') +  guides(fill='none', color='none')
+
+margibi.b <- ggplot() + geom_hline(aes(yintercept=0, color='0'), size=1.5) + geom_point(aes(x=lm.margibi$fitted.values, y=lm.margibi$residuals, fill=lm.margibi$residuals), color='black', pch=21, size=2)  + scale_fill_gradientn(colours = brewer.pal(3,'Blues')) + xlab('Fitted values') + ylab('Residuals') +  guides(fill='none', color='none')
+margibi.graph <- arrangeGrob(margibi.a, margibi.b,ncol=2, top='Margibi, Liberia')
+
+grid.arrange(conakry.graph, macenta.graph, westernurban.graph, portloko.graph, montserrado.graph, margibi.graph, ncol=2, nrow=3)
+```
+
+Again, we see that time alone does not explain most of the variability of the outcome, as we can conclude from the residuals plots. This is particularly the case at the peak of incidence.
+
+###Time and spatial effect combined
+```{r, echo=FALSE,   fig.width=12, fig.heigh=12, fig.align='center'}
+lm.temp <- lm(Total_cases~ns(count_week, df=5), data=all.countries.cases)
+lm.temp.complete <- select(all.countries.cases, Location, Longitude, Latitude, count_week, Total_cases)
+lm.temp.complete$fitted <- lm.temp$fitted.values
+lm.temp.complete$residuals <- lm.temp$residuals
+temp.graph <- ggplot(lm.temp.complete) + geom_point(aes(x=count_week, y=residuals, fill=residuals), pch=21, size=2) + scale_fill_gradientn(colors=brewer.pal(9,'Spectral')) + xlab('Week') + ylab('Residuals') + ggtitle('Time spline model') + guides(fill='none')
+
+lm.spatial <- lm(residuals~ns(Longitude, df=3)*ns(Latitude, df=4), data=lm.temp.complete)
+spatial.graph <- ggplot() + geom_point(aes(x=lm.temp.complete$count_week, y=lm.spatial$residuals, fill=lm.spatial$residuals), pch=21, size=2) + scale_fill_gradientn(colors=brewer.pal(9,'Spectral')) + xlab('Week') + ylab('Residuals') + ggtitle('Long and Lat interaction spline model\non Time spline model residuals') + guides(fill='none')
+
+lm.spatial2 <- lm(Total_cases~ns(Longitude, df=3)*ns(Latitude, df=4)*ns(count_week, df=5), data=all.countries.cases)
+spatial.time.graph <- ggplot() + geom_point(aes(x=lm.temp.complete$count_week, y=lm.spatial2$residuals, fill=lm.spatial2$residuals), pch=21, size=2) + scale_fill_gradientn(colors=brewer.pal(9,'Spectral')) + xlab('Week') + ylab('Residuals') + ggtitle('Long, Lat and week effect interaction model') + guides(fill='none')
+
+grid.arrange(temp.graph, spatial.graph, spatial.time.graph, ncol=3)
+```
+
+Although this is a very simplified approach, we can see a rather small effect of time and location. This favours the hypothesis that other factors despite time and geolocation have an important impact on the weekly incidence (public health itnerventions, climatic factors, etc).
+
+
+###Climatic factors and incidence
+
+As was mentioned int the introduction, previous studies have shown that there might be a climatic factor effect on the incidence of Ebola. In the next section we intend to described this relationship.
+
+###Incidence and climatic factors
+
+Initially we explore the correlation between the climatic factors. As expected the temperature variables are highly correlated, as well as vapor pressure and precipitation. Daily temperature range shows very low correlation with any of the other climatic factors.
+
+```{r, echo=FALSE, fig.align='center'}
+corrplot(cor(select(all_countries, tmp, tmn, tmx, vap, pre, pet,dtr)), order="hclust", method="square", tl.pos="lt", tl.col="black", tl.cex=0.7, tl.srt=45, addCoef.col="black", addCoefasPercent = TRUE, sig.level=0.05, insig = "blank", title='Correlation matrix of climatic factors')
+```
+
+We saw before that not all districts were affected. Thus we explore the relationship between the climatic factors and the incidence on all regions on a very high level. In the figure below we can appreciate how incidence increases as the temperature drops and the dry season begins.
+
+```{r, echo=FALSE, fig.width=14, fig.height=14, fig.align='center'}
+three_countries_map_climate <- rbind(
+    select(guinea_map_complete, Location, count_week, long, lat, group, tmp, pre, vap, Total_cases, Weeks, Country) %>% filter(Weeks>'2013-12-01'),
+    select(SL_map_complete, Location, count_week, long, lat, group, tmp, pre, vap, Total_cases, Weeks,Country) %>% filter(Weeks>'2013-12-01'),
+    select(LB_map_complete, Location, count_week, long, lat, group, tmp, pre, vap,Total_cases, Weeks, Country) %>% filter(Weeks>'2013-12-01'))
+
+#Mean Temp
+tmp.palette <- brewer.pal(5,name="Oranges")
+tmp <- ggplot(three_countries_map_climate %>% 
+           filter(count_week==77 | count_week==89 | count_week==101|count_week==113)
+       , aes(x = long, y = lat, group = group, fill = tmp)) +
+    geom_polygon(color = "black", size = 0.25) + scale_fill_gradientn(colors=tmp.palette, name='') +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Guinea"), fill=NA, size = 0.75, data=guineashp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Sierra Leone"), fill=NA, size = 0.75, data=SLshp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Liberia"), fill=NA, size = 0.75, data=LBshp.adm0) +
+    coord_map() + guides(color='none')+ facet_grid(Weeks~.) + theme(strip.background = element_blank(),   strip.text.x = element_blank(), strip.text.y = element_blank(), legend.position='bottom') +
+    ggtitle('Mean Temp.')
+
+#Precipitation
+pre.palette <- brewer.pal(5, name='Blues')
+pre <- ggplot(three_countries_map_climate %>% 
+           filter(count_week==77 | count_week==89 | count_week==101|count_week==113)
+       , aes(x = long, y = lat, group = group, fill = pre)) +
+    geom_polygon(color = "black", size = 0.25) + scale_fill_gradientn(colors=pre.palette, name='') +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Guinea"), fill=NA, size = 0.75, data=guineashp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Sierra Leone"), fill=NA, size = 0.75, data=SLshp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Liberia"), fill=NA, size = 0.75, data=LBshp.adm0) +
+    coord_map() + guides(color='none')+ facet_grid(Weeks~.) + theme(strip.background = element_blank(),   strip.text.x = element_blank(), strip.text.y = element_blank(), legend.position='bottom') +
+    ggtitle('Precipitation in mm')
+
+#Vapor pressure
+vap.palette <- brewer.pal(5, name='BuGn')
+vap <- ggplot(three_countries_map_climate %>% 
+           filter(count_week==77 | count_week==89 | count_week==101|count_week==113)
+       , aes(x = long, y = lat, group = group, fill = vap)) +
+    geom_polygon(color = "black", size = 0.25) + scale_fill_gradientn(colors=vap.palette, name='') +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Guinea"), fill=NA, size = 0.75, data=guineashp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Sierra Leone"), fill=NA, size = 0.75, data=SLshp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Liberia"), fill=NA, size = 0.75, data=LBshp.adm0) +
+    coord_map() + guides(color='none')+ facet_grid(Weeks~.) + theme(strip.background = element_blank(),   strip.text.x = element_blank(), strip.text.y = element_blank(), legend.position='bottom') +
+    ggtitle('Vapor pressure in hPa')
+
+#Incidence
+cases <- ggplot(three_countries_map_climate %>% 
+           filter(count_week==77 | count_week==89 | count_week==101|count_week==113)
+       , aes(x = long, y = lat, group = group, fill = Total_cases)) +
+    geom_polygon(color = "black",  size = 0.25) + scale_fill_gradientn(colors=terrain.colors(10), values=c(0,0.05,0.1,0.15,0.25,0.3,1), name='') +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Guinea"), fill=NA, size = 0.75, data=guineashp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Sierra Leone"), fill=NA, size = 0.75, data=SLshp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Liberia"), fill=NA, size = 0.75, data=LBshp.adm0) +
+    coord_map() + guides(color='none') + facet_grid(Weeks~.) +
+    theme(legend.position='bottom') +
+    ggtitle('Weekly incidence')
+
+grid.arrange(tmp, pre, vap, cases, ncol=4)
+```
+
+We proceed to analyze the correlation between the climcatic factors and the incidence. Nontheless, we also include a lag effect that will let us explore lagged correlations.
+
+```{r, echo=FALSE, fig.align='center', fig.height=10, fig.width=10}
+all.countries.52 <- filter(all_countries, count_week>52) %>% select(Location, tmp, vap, tmn, tmx, pre, dtr, pet, Total_cases)
+par(mfrow=c(2,3))
+plot(ccf(all.countries.52$tmp, all.countries.52$Total_cases, plot=F), main='Mean Temperature')
+plot(ccf(all.countries.52$tmn, all.countries.52$Total_cases, plot=F), main='Min Temperature')
+plot(ccf(all.countries.52$tmx, all.countries.52$Total_cases, plot=F), main='Max Temperature')
+plot(ccf(all.countries.52$pre, all.countries.52$Total_cases, plot=F), main='Precipitation')
+plot(ccf(all.countries.52$vap, all.countries.52$Total_cases, plot=F), main='Vapor Pressure')
+plot(ccf(all.countries.52$dtr, all.countries.52$Total_cases, plot=F), main='Daily temperature range')
+```
+
+The plot above clearly shows that for some features, the correlation with the incidence increases as the lag increases in absolute terms. Nevertheless this is a crude analysis. A more formal evaluation of this effect is granted.
+
+##Peaks
+
+In order to explore our second aim, we look at the peaks of incidence throughout regions.  
+
+```{r, echo=FALSE, fig.height=14, fig.width=14, fig.align='center'}
+three_countries_peaks <- all_countries %>% select(Location, count_week, Total_cases, Weeks, Peak, Country) %>% group_by(Location) %>% mutate(Cum_peak=cumsum(Peak))
+ggplot(data=filter(three_countries_peaks, Peak==1 & Cum_peak==1 ), aes(Weeks, Total_cases, color=Location), alpha=0.6) +
+    guides(fill='none', color='none') + 
+    geom_line(aes(color=Country), size=1.5) +
+    geom_point(color='black', size=1.5) +
+    geom_text_repel(aes(label=Location), size=3, color='black', nudge_y=3) +
+    facet_grid(Country~.) + ggtitle('Region Peaks by Time, per Country') + ylab('Weekly cases')
+```
+
+The above graph shows that there are also different 'peaking' patterns within countries. Regions in Guinea peak in a more homogeneous way througout the duration of the outbreak. On the other hand, Liberia has a ver early and high peak. Sierra Leaone has increasing peaks that lead up to the most important one in Freetown (Western Area Urban). Again, a spatial and temproal correlation is suggested. 
+
+```{r, echo=FALSE, fig.width=14, fig.height=14, fig.align='center'}
+weeks_count <- c(60,70,80,85,90,95,100,105,110,115, 120,150)
+ggplot(data=filter(three_countries_map_complete, count_week%in%weeks_count), aes(x = long, y = lat, group = group, fill=Cum_peak)) +
+    geom_polygon(color = "black", size = 0.25) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Guinea"), fill=NA, size = 0.75, data=guineashp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Sierra Leone"), fill=NA, size = 0.75, data=SLshp.adm0) +
+    geom_polygon(aes(x = long, y = lat, group = group, color="Liberia"), fill=NA, size = 0.75, data=LBshp.adm0) +
+        scale_color_discrete(name='Country') +
+    scale_fill_continuous(low='gray', high='dark red') +
+    guides(fill='none') +
+    coord_map() +facet_wrap(~Weeks, ncol=4) + ggtitle('Timing of peaks per region')
+```
+
+
+# Statistical Analysis
+## Association between climate factors and EVD incidence
+We used the case-crossover design, where each subject is his or her own control. To avoid any overlap bias we stratified by time (calender month), and we used a poisson regression model to combine a distributed lag nonlinear model (DLNM) with the case-crossover design. The DLNM was used to assess the nonlinear and delayed effects of climate factors (temperature) on incidente case.
+
+$Y_{it}$ = Poisson($\mu_{it}$) \
+$Log(\mu_{it})$ = $Log(Population_i) + \alpha + \beta_{1}T_{it,l} + \beta_{2} Pre_{it,l} + \beta_{3} WD_{it,l} + \gamma Location_{i} + \lambda Strata_{it}$.
+Where $i$ corresponds to a district in the analysed country, $t$ is the week of the observation; $Y_{it}$ is the observed incdence in district $i$ at week $t$; $Population_i$ is the population of the district $i$; $T_{it,l}$,$Pre_{it,l}$, and $WD_{it,l}$ are matrices obtained by applying the DLNM respectively to the temperature, precipitation, and wet days; $\beta_{1}$, $\beta_{2}$, and $\beta_{3}$ are vectors of coefficients for $T_{it,l}$,$Pre_{it,l}$, and $WD_{it,l}$; $Location_{i}$ is a categorical variable to control for the districts effect; $Strata_{it}$ is a categorical variable of the year and calendar month used to control for season and trends. We used a maximun lag period of 3 weeks (to account for the natural EVD incubation period) to the posible delayed effect of temperature, precipitation, and wet days on incidence, and a natural cubic spline with 3 degree of freedom was used in the DLMN to model the non-linear temperature and relative humidity effect on incidence. We used the mean temperature as the reference value to calculate the relative risks of EVD incidence.
+
+## Association between climate factors and onset of EVD peaks
+
+Similarly to the analysis in incidence, we used a time-stratified case-crossover design comibined with the DLNM model. We defined the onset of EVD peak in a district as the week with the highest observed incident cases in that district. We then created a binary variable for onset of EVD peaks in an affected country as $Z_t =1$ if onset EVD peak at week $t$, otherwise $Z_t=0$.
+
+$Log(\frac{\pi_t}{1 - \pi_t}) = Log(Population_i) + \alpha + \beta_1 T_{t,l} + \beta_2 Pre_{t,l} + \beta_{3} WD_{t,l}+ \lambda Strata_t$.
+where $\pi_t = E(Z_t)$. Again we used the DLMN to analysise the association between temperature and the onset of EVD peaks. The mean temperature was used as the reference value to calculate the odd ratios of the onset of EVD peaks.
+
+
+#  Effect of temperature on EVD incidence in Guinea, Liberia, and Sierra Leone
+
+For all the analises we found the covariate $Strata$ to be insignificantly associated with changes in log rate ratio of EVD incidence at the 5% signifance level, we therefore removed it from the model. We found a consistent association between minimun temperature and EVD incidence across  Guinea, Liberia, and Sierra Leone. Our results show a higher rater ratio of EVD incidence at lower temperature compared to that of higher temeprature. We observed different time lag patterns of the minimun temperature and EVD incidence association for the three countries. Guinea and Liberia appeared to have a similar time lag pattern for the effect of temperature on EVD incidence, we observed higher rate ratio of EVD incidence for lower temperature compared to that of higher temperature when the effect of temperature on EVD incidence is delayed bewteen zero to two weeks; and the rate ratio appeared to be higher for high tmperature when the effect is delayed over two weeks after exposure. While in Sierra Leone we observed higher rate ratio of EVD incidence for low temperature compared to that of high temperature when the effect of temperaure on EVD is delayed between zero to a week or between two to three weeks; and we observed the same rate ratio of EVD incidence for all temperature when the effect is delayed between one to two weks after exposure. 
+
+```{r,echo= FALSE}
+# Clear Counsole
+
+#################
+#### Guinea
+################
+Guinea_weekly_cases_climate <-  read_csv("guinea_weekly_cases_climate.csv")
+### Create the corssbasis matrix for temperature, precipitation and wet day
+basis.guinea.tmn <- crossbasis(Guinea_weekly_cases_climate$tmn, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=2)) # here the reference temperature is the mean temperature
+basis.guinea.pre <- crossbasis(Guinea_weekly_cases_climate$pre, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+basis.guinea.wet <- crossbasis(Guinea_weekly_cases_climate$wet, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+
+#Combine the case-crossover design with DLNM
+modelfit.guinea <- glm(Total_cases ~ offset(log(Population)) + basis.guinea.tmn + basis.guinea.pre + basis.guinea.wet + as.factor(Location),family=quasipoisson(), Guinea_weekly_cases_climate)
+
+#Derive the predicted effects and standard errors for temperature and lags using DLNM
+modelprediction.guinea.tmn <- crosspred(basis.guinea.tmn, modelfit.guinea)
+
+
+#################
+#### Liberia
+################
+Liberia_weekly_cases_climate <-  read_csv("Liberia_weekly_cases_climate.csv")
+### Create the corssbasis matrix for temperature, precipitation and wet day
+basis.liberia.tmn <- crossbasis(Liberia_weekly_cases_climate$tmn, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=2)) # here the reference temperature is the mean temperature
+basis.liberia.pre <- crossbasis(Liberia_weekly_cases_climate$pre, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+basis.liberia.wet <- crossbasis(Liberia_weekly_cases_climate$wet, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+
+#Combine the case-crossover design with DLNM
+modelfit.liberia <- glm(Total_cases ~ offset(log(Population)) + basis.liberia.tmn + basis.liberia.pre + basis.liberia.wet + as.factor(Location),family=quasipoisson(), Liberia_weekly_cases_climate)
+
+#Derive the predicted effects and standard errors for temperature and lags using DLNM
+modelprediction.liberia.tmn <- crosspred(basis.liberia.tmn, modelfit.liberia)
+
+#################
+#### Sierra Leone
+################
+SL_weekly_cases_climate <-  read_csv("SL_weekly_cases_climate.csv")
+
+### Create the corssbasis matrix for temperature, precipitation and wet day
+basis.sl.tmn <- crossbasis(SL_weekly_cases_climate$tmn, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=2)) # here the reference temperature is the mean temperature
+basis.sl.pre <- crossbasis(SL_weekly_cases_climate$pre, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+basis.sl.wet <- crossbasis(SL_weekly_cases_climate$wet, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+
+#Combine the case-crossover design with DLNM
+modelfit.sl <- glm(Total_cases ~ offset(log(Population)) + basis.sl.tmn + basis.sl.pre + basis.sl.wet + as.factor(Location),family=quasipoisson(), SL_weekly_cases_climate)
+
+#modelfit.guinea2 <- gee(total_cases ~  basis.guinea.tmn + basis.guinea.pre + basis.guinea.wet, id=as.factor(Location),family=poisson(), Guinea_weekly_cases_climate)
+
+#Derive the predicted effects and standard errors for temperature and lags using DLNM
+modelprediction.sl.tmn <- crosspred(basis.sl.tmn, modelfit.sl)
+```
+
+```{r,echo= FALSE,fig.width=10, fig.height=3, fig.cap="FIG: Effect of minimun temperature on EVD incidence by lag period"}
+
+################
+#### PLot Results
+################
+
+par(mfrow=c(1,3))
+
+## 3 D plots for temperature, lag, and RR
+plot(modelprediction.guinea.tmn,"3d",zlab="Rate Ratio", r=90, d=0.3,col="red", xlab="Minimun Temperature", ylab="Weeks since exposure", main="Guinea", expand=0.6,lwd=0.5)
+
+plot(modelprediction.liberia.tmn,"3d",zlab="Rate Ratio", r=90, d=0.3,col="red", xlab="Minimun Temperature", ylab="Weeks since exposure", main="Liberia", expand=0.6,lwd=0.5)
+
+plot(modelprediction.sl.tmn,"3d",zlab="Rate Ratio", r=90, d=0.3,col="red", xlab="Minimun Temperature", ylab="Weeks since exposure", main="Sierra Leone", expand=0.6,lwd=0.5)
+```
+
+
+```{r,echo=FALSE,fig.width=4, fig.height=3}
+par(mfrow=c(1,1))
+## Contour plots 
+
+plot(modelprediction.guinea.tmn,ptype="contour",key.title=title("RR EVD"), plot.title=title("Guinea",xlab="Temperature",ylab="Weeks since exposure"))
+
+plot(modelprediction.liberia.tmn,ptype="contour",key.title=title("RR EVD"), plot.title=title("Liberia",xlab="Temperature",ylab="Weeks since exposure"))
+
+plot(modelprediction.sl.tmn,ptype="contour",key.title=title("RR EVD"), plot.title=title("Sierra Leone",xlab="Temperature",ylab="Weeks since exposure"))
+```
+
+
+```{r,echo=FALSE,fig.width=10, fig.height=3,fig.cap="FIG: Overall effect of minimun temperature on EVD incidence in"}
+par(mfrow=c(1,3))
+## Overall effect of the lag
+plot(modelprediction.guinea.tmn,"overall", xlab="Minimun temperature (°C)", ylab=" Rate Ratio", main="Guinea")
+
+#plot(modelprediction.guinea.tmn,"slices",var=25,xlab="Lag",ylab="RR",type="p",pch=19,ci="bars")
+plot(modelprediction.liberia.tmn,"overall", xlab="Minimun temperature (°C)", ylab=" Rate ratio ", main="Liberia")
+
+plot(modelprediction.sl.tmn,"overall", xlab="Minimun temperature (°C)", ylab=" Rate Ratio ", main="Sierra Leone")
+
+```
+
+# Effect of temperature on the onset of EVD peaks in Guinea, Liberia, and Sierra Leone
+
+For all the analises we found the covariate $Strata$ to be insignificantly associated with changes in log odds ratio of onset of EVD peaks at the 5% signifance level, we therefore removed it from the model.We found a consistent association between minimun temperature and onset of EVD peaks across the districts of Guinea, Liberia, and Sierra Leone. Our results show a higher odds ratio of the onset of EVD peaks at lower temperature compared to that of higher temeprature. However we observed different lag patterns of the minimun temperature and onset of EVD peaks association for the three countries. For example in Guinea, we observed high odds ratio of onset of EVD peaks for lower temperature compared to that of higher temperature only if the effect of temperature on onset of EVD peaks is delayed bewteen zero to one week or between two to three weeks; and the odds ratio remains constant when the effect was delayed between one to two weeks. While in Liberia and Sierra Leone we observed similar lag effect of temperature and onset of EVD peaks. When the effect of temperature was delayed from zero to two weeks, we found the odds ratio of onset of EVD peaks to be higher for lower temperature compared to that of higher temperature. 
+
+
+```{r,echo=FALSE}
+#################
+#### Guinea
+################
+# Create the binary data for onset of peaks
+guinea_peaks_climate <- Guinea_weekly_cases_climate %>% group_by(Location) %>% mutate(strata= Year*100 + Month, max_case= max(Total_cases,na.rm=T))
+
+guinea_peaks_climate <- replace_na(guinea_peaks_climate,list(Total_cases=0))
+guinea_peaks_climate <- guinea_peaks_climate %>% group_by(Location) %>% 
+  mutate(onset_peak = ifelse((Total_cases < max_case) |(Total_cases==0 & max_case==0),0,1)) %>% ungroup 
+
+### Create the corssbasis matrix for temperature, precipitation and wet day
+basis.guinea.tmn <- crossbasis(Guinea_weekly_cases_climate$tmn, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=2)) # here the reference temperature is the mean temperature
+basis.guinea.pre <- crossbasis(Guinea_weekly_cases_climate$pre, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+basis.guinea.wet <- crossbasis(Guinea_weekly_cases_climate$wet, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+
+#Combine the case-crossover design with DLNM
+modelfit.guineapeaks <- glm(onset_peak ~  basis.guinea.tmn + basis.guinea.pre + basis.guinea.wet  ,family=quasibinomial(), guinea_peaks_climate)
+
+#Derive the predicted effects and standard errors for temperature and lags using DLNM
+modelprediction.guineapeaks.tmn <- crosspred(basis.guinea.tmn, modelfit.guineapeaks)
+
+#################
+#### Liberia
+################
+# Create the binary data for onset of peaks
+liberia_peaks_climate <- Liberia_weekly_cases_climate %>% group_by(Location) %>% mutate(strata= Year*100 + Month, max_case= max(Total_cases,na.rm=T))
+
+liberia_peaks_climate <- replace_na(liberia_peaks_climate,list(Total_cases=0))
+liberia_peaks_climate <- liberia_peaks_climate %>% group_by(Location) %>% 
+  mutate(onset_peak = ifelse((Total_cases < max_case) |(Total_cases==0 & max_case==0),0,1)) %>% ungroup 
+
+### Create the corssbasis matrix for temperature, precipitation and wet day
+basis.liberia.tmn <- crossbasis(Liberia_weekly_cases_climate$tmn, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=2)) # here the reference temperature is the mean temperature
+basis.liberia.pre <- crossbasis(Liberia_weekly_cases_climate$pre, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+basis.liberia.wet <- crossbasis(Liberia_weekly_cases_climate$wet, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+
+#Combine the case-crossover design with DLNM
+modelfit.liberiapeaks <- glm(onset_peak ~  basis.liberia.tmn + basis.liberia.pre + basis.liberia.wet ,family=quasibinomial(), liberia_peaks_climate)
+
+#Derive the predicted effects and standard errors for temperature and lags using DLNM
+modelprediction.liberiapeaks.tmn <- crosspred(basis.liberia.tmn, modelfit.liberiapeaks)
+
+#################
+#### Sierra Leone
+################
+# Create the binary data for onset of peaks
+sl_peaks_climate <- SL_weekly_cases_climate %>% group_by(Location) %>% mutate(strata= Year*100 + Month,max_case= max(Total_cases,na.rm=T))
+
+sl_peaks_climate <- replace_na(sl_peaks_climate,list(Total_cases=0))
+sl_peaks_climate <- sl_peaks_climate %>% group_by(Location) %>% 
+  mutate(onset_peak = ifelse((Total_cases < max_case) |(Total_cases==0 & max_case==0),0,1)) %>% ungroup 
+
+### Create the corssbasis matrix for temperature, precipitation and wet day
+basis.sl.tmn <- crossbasis(SL_weekly_cases_climate$tmn, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=2)) # here the reference temperature is the mean temperature
+basis.sl.pre <- crossbasis(SL_weekly_cases_climate$pre, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+basis.sl.wet <- crossbasis(SL_weekly_cases_climate$wet, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+
+#Combine the case-crossover design with DLNM
+modelfit.slpeaks <- glm(onset_peak ~  basis.sl.tmn + basis.sl.pre + basis.sl.wet ,family=quasibinomial(), sl_peaks_climate)
+
+#Derive the predicted effects and standard errors for temperature and lags using DLNM
+modelprediction.slpeaks.tmn <- crosspred(basis.sl.tmn, modelfit.slpeaks) 
+
+
+```
+
+```{r,echo=FALSE,fig.width=10, fig.height=3, fig.cap="FIG: Effect of minimun temperature on onset of EVD peaks by lag period"}
+#############
+#### PLot Results
+################
+
+par(mfrow=c(1,3))
+
+## 3 D plots for temperature, lag, and RR
+plot(modelprediction.guineapeaks.tmn,"3d",zlab="Odd ratio", r=90, d=0.3,col="red", xlab="Minimun Temperature", ylab="Weeks since exposure", main="Guinea", expand=0.6,lwd=0.5)
+
+plot(modelprediction.liberiapeaks.tmn,"3d",zlab="Odd Ratio", r=90, d=0.3,col="red", xlab="Minimun Temperature", ylab="Weeks since exposure", main="Liberia", expand=0.6,lwd=0.5)
+
+plot(modelprediction.slpeaks.tmn,"3d",zlab="Odd ratio", r=90, d=0.3,col="red", xlab="Minimun Temperature", ylab="Weeks since exposure", main="Sierra Leone", expand=0.6,lwd=0.5)
+
+
+```
+
+
+```{r,echo=FALSE,fig.width=4, fig.height=3}
+par(mfrow=c(1,1))
+## Contour plots 
+plot(modelprediction.guineapeaks.tmn,ptype="contour",key.title=title("OR peak"), plot.title=title("Guinea",xlab="Temperature",ylab="Weeks since exposure"))
+
+plot(modelprediction.liberiapeaks.tmn,ptype="contour",key.title=title("OR peak"), plot.title=title("Liberia",xlab="Temperature",ylab="Weeks since exposure"))
+
+plot(modelprediction.slpeaks.tmn,ptype="contour",key.title=title("OR peak"), plot.title=title("Sierra Leone",xlab="Temperature",ylab="Weeks since exposure"))
+
+
+```
+
+```{r,echo=FALSE,fig.width=10, fig.height=3,fig.cap="FIG: Overall effect of minimun temperature on onset of EVD peaks in the districsts of Guinea, Liberia, and Sierra Leone"}
+par(mfrow=c(1,3))
+## Overall effect of the lag
+plot(modelprediction.guineapeaks.tmn,"overall", xlab="Minimun temperature (°C)", ylab=" Odd Ratio", main="Guinea")
+
+plot(modelprediction.liberiapeaks.tmn,"overall", xlab="Minimun temperature (°C)", ylab=" Odd Ratio", main=" Liberia")
+
+plot(modelprediction.slpeaks.tmn,"overall", xlab="Minimun temperature (°C)", ylab=" Odd Ratio", main="Sierra Leone ")
+```
+
+# Analysis of the pooled data for the three countries combined
+
+```{r,echo=FALSE}
+###############
+#### Temp and Incidence
+##################
+
+## Cobined the data for the three countries
+threecountries_cases_climate <- rbind(guinea_peaks_climate,liberia_peaks_climate)
+threecountries_cases_climate <- rbind(threecountries_cases_climate,sl_peaks_climate)
+#summary(threecountries_cases_climate)
+
+### Create the corssbasis matrix for temperature, precipitation and wet day
+basis.pooleddata.tmn <- crossbasis(threecountries_cases_climate$tmn, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=2)) # here the reference temperature is the mean temperature
+basis.pooleddata.tmax <- crossbasis(threecountries_cases_climate$tmx, lag=3,argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=2))
+basis.pooleddata.pre <- crossbasis(threecountries_cases_climate$pre, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+basis.pooleddata.wet <- crossbasis(threecountries_cases_climate$wet, lag=3, argvar=list(fun="lin"),
+      arglag=list(fun="poly",degree=1))
+
+#Combine the case-crossover design with DLNM
+modelfit.pooleddata <- glm(Total_cases ~ offset(log(Population)) + basis.pooleddata.tmn + basis.pooleddata.pre + basis.pooleddata.wet  + as.factor(Country),family=quasipoisson(), threecountries_cases_climate)
+
+modelfit.pooleddata.tmx <- glm(Total_cases ~  basis.pooleddata.tmax + basis.pooleddata.pre + basis.pooleddata.wet  + as.factor(Country),family=quasipoisson(), threecountries_cases_climate)
+
+#Derive the predicted effects and standard errors for temperature and lags using DLNM
+modelprediction.pooleddata.tmn <- crosspred(basis.pooleddata.tmn, modelfit.pooleddata)
+modelprediction.pooleddata.tmx <- crosspred(basis.pooleddata.tmax, modelfit.pooleddata.tmx)
+
+###############
+#### Temp and peaks
+##################
+
+modelfit.pooleddata.peaks <- glm(onset_peak ~  basis.pooleddata.tmn + basis.pooleddata.pre + basis.pooleddata.wet  + as.factor(Country) ,family=quasibinomial(), threecountries_cases_climate)
+
+modelfit.pooleddata.peaks.tmx <- glm(onset_peak ~  basis.pooleddata.tmax + basis.pooleddata.pre + basis.pooleddata.wet  + as.factor(Country) ,family=quasibinomial(), threecountries_cases_climate)
+
+#summary(modelfit.pooleddata.peaks)
+
+modelprediction.pooleddata.peaks.tmn <- crosspred(basis.pooleddata.tmn, modelfit.pooleddata.peaks)
+modelprediction.pooleddata.peaks.tmx <- crosspred(basis.pooleddata.tmax, modelfit.pooleddata.peaks.tmx)
+ 
+
+
+```
+
+```{r,echo=FALSE,fig.width=10, fig.height=4,fig.cap="FIG: Effect of minimun temperature on EVD incidence (A) and onset of EVD peaks (B) by lag period for the three countries combined"}
+###############
+#### Plots Results
+##################
+
+par(mfrow=c(1,2))
+
+## 3 D plots for temperature, lag, and RR
+plot(modelprediction.pooleddata.tmn,"3d",zlab="Rate Ratio", r=90, d=0.3,col="red", xlab="Minimun Temperature", ylab="Weeks since exposure", main="(A)", expand=0.6,lwd=0.5)
+
+plot(modelprediction.pooleddata.peaks.tmn,"3d",zlab="Odds Ratio", r=90, d=0.3,col="red", xlab="Minimun Temperature", ylab="Weeks since exposure", main="(B)", expand=0.6,lwd=0.5)
+
+```
+
+```{r,echo=FALSE,fig.width=4, fig.height=3}
+## Contour plots 
+par(mfrow=c(2,1))
+plot(modelprediction.pooleddata.tmn,ptype="contour",key.title=title("RR EVD"), plot.title=title("Pooled data",xlab="Temperature",ylab="Weeks since exposure"))
+
+#par(mfrow=c(1,1))
+plot(modelprediction.pooleddata.peaks.tmn,ptype="contour",key.title=title("OR peak"), plot.title=title("Pooled data",xlab="Temperature",ylab="Weeks since exposure"))
+
+
+```
+
+```{r,echo=FALSE,fig.width=8, fig.height=3,fig.cap="FIG: Overall effect of minimun temperature on EVD incidence (A) and onset of EVD peaks (B) the three countries combined"}
+par(mfrow=c(1,2))
+## Overall effect of the lag
+plot(modelprediction.pooleddata.tmn,"overall", xlab="Minimun temperature (°C)", ylab=" Rate Ratio", main="(A)")
+
+plot(modelprediction.pooleddata.peaks.tmn,"overall", xlab="Minimun temperature (°C)", ylab=" Odds Ratio", main="(B)")
+```
+
+
+#Conclusion
+
+In this study the examined the association between weekly ambient temperature and the weekly EVD incident cases and the onset of EVD peaks in Guinea, Liberia, and Sierra Leone. We used a combination of case-crossover design and DLNM, and we controled for other climatic factors suh as precipation and we days.We found a non-linear relationship betwen the ambient temperature and the EVD incidence and similarly between ambient tempreature and the onset of EVD peaks across Guinea, Liberia, and Sierra Leoene. We found higher rate ratio of EVD incidence in Guinea, Liberia, and Sierra Leone for minimal temperature ranging from 14 °C ~ 20°C, and a higher odds ratio of EVD peaks for minimal temperature ranging from 14 ~ 19°C. However our results suggest a different lag pattern for the effect  of temperature on EVD cases and onset of EVD peaks across the three countries. In conclusion our results show evidence of a non-linear relationship between ambient temperature and EVD incidence and onset of ED peaks in districts of Guinea, Liberaia and Sierra Leone, and therefore we recommend that such association should be taking into account for any model that aims to evaluate or assess the posible reasons of the observed dynamics of the 2014 Ebola virus disease outbreak in West Africa.  
+
